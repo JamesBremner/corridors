@@ -39,6 +39,15 @@ public:
     }
 };
 
+class cCorridor
+{
+public:
+    int x1, y1, x2, y2;
+    cCorridor(int xs, int ys, int xe, int ye) : x1(xs), y1(ys), x2(xe), y2(ye)
+    {
+    }
+};
+
 class cLevelGenerator1
 {
 public:
@@ -60,6 +69,10 @@ public:
     {
         return rooms;
     }
+    std::vector<cCorridor> getCorridors()
+    {
+        return corridors;
+    }
     raven::graph::cGraph getSpan()
     {
         return spanTree;
@@ -72,6 +85,7 @@ public:
 private:
     std::vector<std::vector<bool>> usedTiles;
     std::vector<cRoom> rooms;
+    std::vector<cCorridor> corridors;
     raven::graph::sGraphData gd;
     raven::graph::cGraph spanTree;
 
@@ -162,91 +176,43 @@ private:
             }
         gd.startName = "V0";
         spanTree = spanningTree(gd);
+
+        for (auto &l : spanTree.edgeList())
+        {
+            generateCorridor(rooms[l.first],rooms[l.second]);
+        }
     }
-    //     void ConnectRooms()
-    //     {
-    //         List<Edge> edges = new List<Edge>();
 
-    //         for (int i = 0; i < rooms.Count; i++)
-    //         {
-    //             for (int j = i + 1; j < rooms.Count; j++)
-    //             {
-    //                 Vector2Int roomA = rooms[i];
-    //                 Vector2Int roomB = rooms[j];
-    //                 float distance = Vector2Int.Distance(roomA, roomB);
-    //                 edges.Add(new Edge(i, j, distance));
-    //             }
-    //         }
-
-    //         edges.Sort((a, b) = > a.distance.CompareTo(b.distance));
-
-    //         List<int> takenIndices = new List<int>();
-    //         List<int> connectedIndices = new List<int>();
-
-    //         foreach (Edge edge in edges)
-    //         {
-    //             if (!takenIndices.Contains(edge.from) || !takenIndices.Contains(edge.to))
-    //             {
-    //                 connectedIndices.Add(edge.from);
-    //                 connectedIndices.Add(edge.to);
-    //                 takenIndices.Add(edge.from);
-    //                 takenIndices.Add(edge.to);
-
-    //                 Vector2Int roomA = rooms[edge.from];
-    //                 Vector2Int roomB = rooms[edge.to];
-
-    //                 GenerateCorridor(roomA, roomB);
-    //             }
-    //         }
-    //     }
-
-    //     void GenerateCorridor(Vector2Int pointA, Vector2Int pointB)
-    //     {
-    //         Vector2Int start = pointA;
-    //         Vector2Int end = pointB;
-
-    //         if (start.x > end.x)
-    //         {
-    //             Vector2Int temp = start;
-    //             start = end;
-    //             end = temp;
-    //         }
-
-    //         int corridorWidth = Mathf.Abs(end.x - start.x) + 1;
-    //         int corridorHeight = Mathf.Abs(end.y - start.y) + 1;
-
-    //         int corridorX = start.x;
-    //         int corridorY = start.y;
-
-    //         for (int i = 0; i < corridorWidth; i++)
-    //         {
-    //             for (int j = 0; j < corridorHeight; j++)
-    //             {
-    //                 Vector3 tilePosition = new Vector3(corridorX + i, corridorY + j, 0);
-    //                 GameObject corridorTile = Instantiate(corridorPrefab, tilePosition, Quaternion.identity);
-    //                 corridorTile.transform.parent = mapHolder;
-    //             }
-    //         }
-    //     }
-
-    //     struct Edge
-    //     {
-    //     public
-    //         int from;
-    //     public
-    //         int to;
-    //     public
-    //         float distance;
-
-    //     public
-    //         Edge(int from, int to, float distance)
-    //         {
-    //             this.from = from;
-    //             this.to = to;
-    //             this.distance = distance;
-    //         }
-    //     }
+    void generateCorridor(
+        cRoom &rooma, cRoom &roomb);
 };
+
+void cLevelGenerator1::generateCorridor(
+    cRoom &rooma, cRoom &roomb)
+{
+    if (rooma.y+rooma.h-1 < roomb.y)
+    {
+        // from bottom middle to left middle
+        corridors.emplace_back(
+            rooma.x + rooma.w / 2, rooma.y + rooma.h - 1,
+            roomb.x + roomb.w / 2, roomb.y);
+    }
+    else if ( 
+     rooma.x+rooma.w - 1 < roomb.x )
+    {
+        //from right middle to left middle
+        corridors.emplace_back(
+            rooma.x+rooma.w-1, rooma.y+rooma.h/2,
+            roomb.x,roomb.y+roomb.h/2 );
+    }
+    else
+    {
+        // from top middle to bottom middle
+        corridors.emplace_back(
+            rooma.x+rooma.w/2,rooma.y,
+            roomb.x+roomb.w/2,roomb.y+roomb.h-1 );
+    }
+}
 class cGUI : public cStarterGUI
 {
 public:
@@ -259,27 +225,25 @@ public:
         fm.events().draw(
             [this](PAINTSTRUCT &ps)
             {
-                int scale = 10;
-                int off = 10;
+                scale = 10;
+                off = 10;
                 wex::shapes S(ps);
                 S.penThick(5);
-                auto &gd = levelGenerator.getGraphData();
-                for (auto &l : levelGenerator.getSpan().edgeList())
-                {
-                    int x1 = off + scale * atoi(gd.g.rVertexAttr(l.first, 0).c_str());
-                    int y1 = off + scale * atoi(gd.g.rVertexAttr(l.first, 1).c_str());
-                    int x2 = off + scale * atoi(gd.g.rVertexAttr(l.second, 0).c_str());
-                    int y2 = off + scale * atoi(gd.g.rVertexAttr(l.second, 1).c_str());
-                    S.line({x1, y1, x2, y2});
-                }
 
-                S.color(0xFFAAAA);
-                S.fill();
-                for (auto &room : levelGenerator.getRooms())
-                {
-                    S.rectangle({off + scale * room.x, off + scale * room.y,
-                                 scale * (room.w - 1), scale * (room.h - 1)});
-                }
+                drawRooms(S);
+
+                // S.color(0x0000FF);
+                // auto &gd = levelGenerator.getGraphData();
+                // for (auto &l : levelGenerator.getSpan().edgeList())
+                // {
+                //     int x1 = off + scale * atoi(gd.g.rVertexAttr(l.first, 0).c_str());
+                //     int y1 = off + scale * atoi(gd.g.rVertexAttr(l.first, 1).c_str());
+                //     int x2 = off + scale * atoi(gd.g.rVertexAttr(l.second, 0).c_str());
+                //     int y2 = off + scale * atoi(gd.g.rVertexAttr(l.second, 1).c_str());
+                //     S.line({x1, y1, x2, y2});
+                // }
+
+                drawCorridors(S);
             });
 
         show();
@@ -288,7 +252,34 @@ public:
 
 private:
     cLevelGenerator1 levelGenerator;
+
+    int scale;
+    int off;
+
+    void drawRooms(wex::shapes &S);
+    void drawCorridors(wex::shapes &S);
 };
+
+void cGUI::drawRooms(wex::shapes &S)
+{
+    S.color(0xFFAAAA);
+    S.fill();
+    for (auto &room : levelGenerator.getRooms())
+    {
+        S.rectangle({off + scale * room.x, off + scale * room.y,
+                     scale * (room.w - 1), scale * (room.h - 1)});
+    }
+}
+
+void cGUI::drawCorridors(wex::shapes &S)
+{
+    S.color(0x00FF00);
+    for (auto &corridor : levelGenerator.getCorridors())
+    {
+        S.line({off + scale * corridor.x1, off + scale * corridor.y1,
+               off + scale * corridor.x2, off + scale * corridor.y2});
+    }
+}
 
 main()
 {
