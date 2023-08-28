@@ -5,27 +5,8 @@
 #include <vector>
 #include <algorithm>
 #include <wex.h>
+#include "GraphTheory.h"
 #include "cStarterGUI.h"
-
-class cGUI : public cStarterGUI
-{
-public:
-    cGUI()
-        : cStarterGUI(
-              "Starter",
-              {50, 50, 1000, 500}),
-          lb(wex::maker::make<wex::label>(fm))
-    {
-        lb.move(50, 50, 100, 30);
-        lb.text("Hello World");
-
-        show();
-        run();
-    }
-
-private:
-    wex::label &lb;
-};
 
 class cRoom
 {
@@ -38,11 +19,29 @@ public:
         : x(X), y(Y), w(W), h(H)
     {
     }
+    void print() const
+    {
+        std::cout << "room at " << x << "," << y << " size " << w << " by " << h << "\n";
+    }
+    void center(int &xc, int &yc) const
+    {
+        xc = x + w / 2;
+        yc = y + h / 2;
+    }
+    int distance2(const cRoom &other) const
+    {
+        int x, y, xo, yo;
+        center(x, y);
+        other.center(xo, yo);
+        int dx = x - xo;
+        int dy = y - yo;
+        return dx * dx + dy * dy;
+    }
 };
 
 class cLevelGenerator1
 {
-    public:
+public:
     //  GameObject floorPrefab;
     //  GameObject wallPrefab;
     //  GameObject corridorPrefab;
@@ -52,16 +51,29 @@ class cLevelGenerator1
     int roomSizeMax = 15;
     int seed = 12345;
 
-    // private Transform mapHolder;
-
     cLevelGenerator1()
     {
         GenerateLevel();
     }
 
+    std::vector<cRoom> getRooms()
+    {
+        return rooms;
+    }
+    raven::graph::cGraph getSpan()
+    {
+        return spanTree;
+    }
+    raven::graph::sGraphData &getGraphData()
+    {
+        return gd;
+    }
+
 private:
     std::vector<std::vector<bool>> usedTiles;
     std::vector<cRoom> rooms;
+    raven::graph::sGraphData gd;
+    raven::graph::cGraph spanTree;
 
     void GenerateLevel()
     {
@@ -78,36 +90,34 @@ private:
         {
             for (int y = 0; y < mapHeight; y++)
             {
-                if (!usedTiles[x][y])
-                {
-                    // Generate rooms
-                    if (rand() % 100 < 80)
-                        continue;
+                if (usedTiles[x][y])
+                    continue;
 
-                    int roomWidth = rand()%sizeRange + roomSizeMin;
-                    int roomHeight = rand()%sizeRange + roomSizeMin;
+                if (rand() % 100 < 80)
+                    continue;
 
-                    int startX = x - roomWidth / 2;
-                    int startY = y - roomHeight / 2;
+                cRoom room(
+                    x, y,
+                    rand() % sizeRange + roomSizeMin,
+                    rand() % sizeRange + roomSizeMin);
 
-                    if (IsSpaceAvailable(startX, startY, roomWidth, roomHeight))
-                    {
-                        GenerateRoom(startX, startY, roomWidth, roomHeight);
-                        rooms.emplace_back(startX, startY, roomWidth, roomHeight);
-                        MarkTilesUsed(startX, startY, roomWidth, roomHeight);
-                    }
-                }
+                if (!IsSpaceAvailable(room))
+                    continue;
+
+                room.print();
+                rooms.push_back(room);
+                MarkTilesUsed(room);
             }
         }
 
-        // ConnectRooms();
+        ConnectRooms();
     }
 
-    bool IsSpaceAvailable(int x, int y, int width, int height)
+    bool IsSpaceAvailable(const cRoom &room)
     {
-        for (int i = x; i < x + width; i++)
+        for (int i = room.x; i < room.x + room.w; i++)
         {
-            for (int j = y; j < y + height; j++)
+            for (int j = room.y; j < room.y + room.h; j++)
             {
                 if (i < 0 || i >= mapWidth || j < 0 || j >= mapHeight || usedTiles[i][j])
                 {
@@ -118,41 +128,41 @@ private:
         return true;
     }
 
-    void MarkTilesUsed(int x, int y, int width, int height)
+    void MarkTilesUsed(const cRoom &room)
     {
-        for (int i = x; i < x + width; i++)
+        for (int i = room.x; i < room.x + room.w; i++)
         {
-            for (int j = y; j < y + height; j++)
+            for (int j = room.y; j < room.y + room.h; j++)
             {
                 usedTiles[i][j] = true;
             }
         }
     }
 
-    void GenerateRoom(int x, int y, int width, int height)
+    void ConnectRooms()
     {
-        std::cout << "room at " <<x<<","<<y<<" size "<<width<<" by "<<height<<"\n";
 
-        for (int i = x; i < x + width; i++)
+        for (int kr = 0; kr < rooms.size(); kr++)
         {
-            for (int j = y; j < y + height; j++)
-            {
-                // Vector3 tilePosition = new Vector3(i, j, 0);
-
-                // if (i == x || i == x + width - 1 || j == y || j == y + height - 1)
-                // {
-                //     GameObject wallTile = Instantiate(wallPrefab, tilePosition, Quaternion.identity);
-                //     wallTile.transform.parent = mapHolder;
-                // }
-                // else
-                // {
-                //     GameObject floorTile = Instantiate(floorPrefab, tilePosition, Quaternion.identity);
-                //     floorTile.transform.parent = mapHolder;
-                // }
-            }
+            int xc, yc;
+            rooms[kr].center(xc, yc);
+            gd.g.wVertexAttr(
+                gd.g.add(
+                    "V" + std::to_string(kr)),
+                {std::to_string(xc),
+                 std::to_string(yc)});
         }
+        gd.edgeWeight.resize(
+            2 * gd.g.vertexCount() * gd.g.vertexCount(), INT_MAX);
+        for (int kr = 0; kr < rooms.size(); kr++)
+            for (int kr2 = kr + 1; kr2 < rooms.size(); kr2++)
+            {
+                gd.edgeWeight[gd.g.add(kr, kr2)] =
+                    rooms[kr].distance2(rooms[kr2]);
+            }
+        gd.startName = "V0";
+        spanTree = spanningTree(gd);
     }
-
     //     void ConnectRooms()
     //     {
     //         List<Edge> edges = new List<Edge>();
@@ -237,10 +247,51 @@ private:
     //         }
     //     }
 };
+class cGUI : public cStarterGUI
+{
+public:
+    cGUI()
+        : cStarterGUI(
+              "Rooms",
+              {50, 50, 1000, 500})
+    {
+
+        fm.events().draw(
+            [this](PAINTSTRUCT &ps)
+            {
+                int scale = 10;
+                int off = 10;
+                wex::shapes S(ps);
+                S.penThick(5);
+                auto &gd = levelGenerator.getGraphData();
+                for (auto &l : levelGenerator.getSpan().edgeList())
+                {
+                    int x1 = off + scale * atoi(gd.g.rVertexAttr(l.first, 0).c_str());
+                    int y1 = off + scale * atoi(gd.g.rVertexAttr(l.first, 1).c_str());
+                    int x2 = off + scale * atoi(gd.g.rVertexAttr(l.second, 0).c_str());
+                    int y2 = off + scale * atoi(gd.g.rVertexAttr(l.second, 1).c_str());
+                    S.line({x1, y1, x2, y2});
+                }
+
+                S.color(0xFFAAAA);
+                S.fill();
+                for (auto &room : levelGenerator.getRooms())
+                {
+                    S.rectangle({off + scale * room.x, off + scale * room.y,
+                                 scale * (room.w - 1), scale * (room.h - 1)});
+                }
+            });
+
+        show();
+        run();
+    }
+
+private:
+    cLevelGenerator1 levelGenerator;
+};
 
 main()
 {
-    cLevelGenerator1 levelGenerator;
 
     cGUI theGUI;
     return 0;
