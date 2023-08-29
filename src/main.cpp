@@ -6,92 +6,12 @@
 #include <algorithm>
 #include <wex.h>
 #include "GraphTheory.h"
-#include "cStarterGUI.h"
 
-class cRoom
-{
-public:
-    int x;
-    int y;
-    int w;
-    int h;
-    cRoom(int X, int Y, int W, int H)
-        : x(X), y(Y), w(W), h(H)
-    {
-    }
-    void print() const
-    {
-        std::cout << "room at " << x << "," << y << " size " << w << " by " << h << "\n";
-    }
-    void center(int &xc, int &yc) const
-    {
-        xc = x + w / 2;
-        yc = y + h / 2;
-    }
-    int distance2(const cRoom &other) const
-    {
-        int x, y, xo, yo;
-        center(x, y);
-        other.center(xo, yo);
-        int dx = x - xo;
-        int dy = y - yo;
-        return dx * dx + dy * dy;
-    }
-};
+#include "corridors.h"
+#include "cGUI.h"
 
-class cCorridor
-{
-public:
-    int x1, y1, x2, y2;
-    cCorridor(int xs, int ys, int xe, int ye) : x1(xs), y1(ys), x2(xe), y2(ye)
+    void cLevelGenerator1::GenerateLevel()
     {
-    }
-};
-
-class cLevelGenerator1
-{
-public:
-    //  GameObject floorPrefab;
-    //  GameObject wallPrefab;
-    //  GameObject corridorPrefab;
-    int mapWidth = 100;
-    int mapHeight = 100;
-    int roomSizeMin = 5;
-    int roomSizeMax = 15;
-    int seed = 12345;
-
-    cLevelGenerator1()
-    {
-        GenerateLevel();
-    }
-
-    std::vector<cRoom> getRooms()
-    {
-        return rooms;
-    }
-    std::vector<cCorridor> getCorridors()
-    {
-        return corridors;
-    }
-    raven::graph::cGraph getSpan()
-    {
-        return spanTree;
-    }
-    raven::graph::sGraphData &getGraphData()
-    {
-        return gd;
-    }
-
-private:
-    std::vector<std::vector<bool>> usedTiles;
-    std::vector<cRoom> rooms;
-    std::vector<cCorridor> corridors;
-    raven::graph::sGraphData gd;
-    raven::graph::cGraph spanTree;
-
-    void GenerateLevel()
-    {
-        // mapHolder = new GameObject("Generated Map").transform;
         usedTiles.resize(mapHeight, std::vector<bool>(mapWidth, false));
 
         new bool[mapWidth, mapHeight];
@@ -118,7 +38,7 @@ private:
                 if (!IsSpaceAvailable(room))
                     continue;
 
-                room.print();
+                //room.print();
                 rooms.push_back(room);
                 MarkTilesUsed(room);
             }
@@ -127,7 +47,7 @@ private:
         ConnectRooms();
     }
 
-    bool IsSpaceAvailable(const cRoom &room)
+        bool cLevelGenerator1::IsSpaceAvailable(const cRoom &room)
     {
         for (int i = room.x; i < room.x + room.w; i++)
         {
@@ -142,7 +62,7 @@ private:
         return true;
     }
 
-    void MarkTilesUsed(const cRoom &room)
+    void cLevelGenerator1::MarkTilesUsed(const cRoom &room)
     {
         for (int i = room.x; i < room.x + room.w; i++)
         {
@@ -152,10 +72,36 @@ private:
             }
         }
     }
-
-    void ConnectRooms()
+void cLevelGenerator1::generateCorridor(
+    cRoom &rooma, cRoom &roomb)
+{
+    if (rooma.y + rooma.h - 1 < roomb.y)
     {
+        // from bottom middle to left middle
+        corridors.emplace_back(
+            rooma.x + rooma.w / 2, rooma.y + rooma.h - 1,
+            roomb.x + roomb.w / 2, roomb.y);
+    }
+    else if (
+        rooma.x + rooma.w - 1 < roomb.x)
+    {
+        // from right middle to left middle
+        corridors.emplace_back(
+            rooma.x + rooma.w - 1, rooma.y + rooma.h / 2,
+            roomb.x, roomb.y + roomb.h / 2);
+    }
+    else
+    {
+        // from top middle to bottom middle
+        corridors.emplace_back(
+            rooma.x + rooma.w / 2, rooma.y,
+            roomb.x + roomb.w / 2, roomb.y + roomb.h - 1);
+    }
+}
 
+    void cLevelGenerator1::ConnectRooms()
+    {
+        // add vertex at center of each room
         for (int kr = 0; kr < rooms.size(); kr++)
         {
             int xc, yc;
@@ -166,99 +112,39 @@ private:
                 {std::to_string(xc),
                  std::to_string(yc)});
         }
+
+        // allocate space for all possible edge weights
         gd.edgeWeight.resize(
             2 * gd.g.vertexCount() * gd.g.vertexCount(), INT_MAX);
+
+        // add links between rooms that are 'reasonably' close to each other
+        int reasonable = 2 *roomSizeMax;
         for (int kr = 0; kr < rooms.size(); kr++)
             for (int kr2 = kr + 1; kr2 < rooms.size(); kr2++)
             {
-                gd.edgeWeight[gd.g.add(kr, kr2)] =
-                    rooms[kr].distance2(rooms[kr2]);
+                // if( kr == 0)
+                //     std::cout << kr2 <<" "<< rooms[kr2].x <<" "<<rooms[kr2].y<<"\n";
+                if( abs(rooms[kr].x-rooms[kr2].x) > reasonable ||
+                 abs(rooms[kr].y-rooms[kr2].y) > reasonable)
+                    continue;
+
+                int cost =  rooms[kr].distance2(rooms[kr2]);
+                // if( kr == 0)
+                //     std::cout << "add " << cost << "\n";
+                gd.edgeWeight[gd.g.add(kr, kr2)] = cost;
             }
+
+        // generate spanning tree to connect all rooms
         gd.startName = "V0";
         spanTree = spanningTree(gd);
 
+        // generate corridor between every pair of linked rooms in spanning tree
         for (auto &l : spanTree.edgeList())
         {
-            generateCorridor(rooms[l.first],rooms[l.second]);
+            generateCorridor(rooms[l.first], rooms[l.second]);
         }
     }
 
-    void generateCorridor(
-        cRoom &rooma, cRoom &roomb);
-};
-
-void cLevelGenerator1::generateCorridor(
-    cRoom &rooma, cRoom &roomb)
-{
-    if (rooma.y+rooma.h-1 < roomb.y)
-    {
-        // from bottom middle to left middle
-        corridors.emplace_back(
-            rooma.x + rooma.w / 2, rooma.y + rooma.h - 1,
-            roomb.x + roomb.w / 2, roomb.y);
-    }
-    else if ( 
-     rooma.x+rooma.w - 1 < roomb.x )
-    {
-        //from right middle to left middle
-        corridors.emplace_back(
-            rooma.x+rooma.w-1, rooma.y+rooma.h/2,
-            roomb.x,roomb.y+roomb.h/2 );
-    }
-    else
-    {
-        // from top middle to bottom middle
-        corridors.emplace_back(
-            rooma.x+rooma.w/2,rooma.y,
-            roomb.x+roomb.w/2,roomb.y+roomb.h-1 );
-    }
-}
-class cGUI : public cStarterGUI
-{
-public:
-    cGUI()
-        : cStarterGUI(
-              "Rooms",
-              {50, 50, 1000, 500})
-    {
-
-        fm.events().draw(
-            [this](PAINTSTRUCT &ps)
-            {
-                scale = 10;
-                off = 10;
-                wex::shapes S(ps);
-                S.penThick(5);
-
-                drawRooms(S);
-
-                // S.color(0x0000FF);
-                // auto &gd = levelGenerator.getGraphData();
-                // for (auto &l : levelGenerator.getSpan().edgeList())
-                // {
-                //     int x1 = off + scale * atoi(gd.g.rVertexAttr(l.first, 0).c_str());
-                //     int y1 = off + scale * atoi(gd.g.rVertexAttr(l.first, 1).c_str());
-                //     int x2 = off + scale * atoi(gd.g.rVertexAttr(l.second, 0).c_str());
-                //     int y2 = off + scale * atoi(gd.g.rVertexAttr(l.second, 1).c_str());
-                //     S.line({x1, y1, x2, y2});
-                // }
-
-                drawCorridors(S);
-            });
-
-        show();
-        run();
-    }
-
-private:
-    cLevelGenerator1 levelGenerator;
-
-    int scale;
-    int off;
-
-    void drawRooms(wex::shapes &S);
-    void drawCorridors(wex::shapes &S);
-};
 
 void cGUI::drawRooms(wex::shapes &S)
 {
@@ -277,13 +163,25 @@ void cGUI::drawCorridors(wex::shapes &S)
     for (auto &corridor : levelGenerator.getCorridors())
     {
         S.line({off + scale * corridor.x1, off + scale * corridor.y1,
-               off + scale * corridor.x2, off + scale * corridor.y2});
+                off + scale * corridor.x2, off + scale * corridor.y2});
     }
 }
-
-main()
+void cGUI::drawSpan(wex::shapes &S)
 {
-
-    cGUI theGUI;
-    return 0;
+    S.color(0x0000FF);
+    auto &gd = levelGenerator.getGraphData();
+    for (auto &l : levelGenerator.getSpan().edgeList())
+    {
+        int x1 = off + scale * atoi(gd.g.rVertexAttr(l.first, 0).c_str());
+        int y1 = off + scale * atoi(gd.g.rVertexAttr(l.first, 1).c_str());
+        int x2 = off + scale * atoi(gd.g.rVertexAttr(l.second, 0).c_str());
+        int y2 = off + scale * atoi(gd.g.rVertexAttr(l.second, 1).c_str());
+        S.line({x1, y1, x2, y2});
+    }
 }
+    main()
+    {
+
+        cGUI theGUI;
+        return 0;
+    }

@@ -31,13 +31,13 @@ OBJ_starter = \
 
 ### COMPILE
 
-$(ODIR)/%.o: %.cpp  
+$(ODIR)/%.o: %.cpp corridors.h
 	g++  $(CCflags) \
 	-c -o $@ $< $(INCS)
 
 starter: $(OBJ_starter)
 	g++ $(OPT) \
-	-o bin/starter.exe $^  \
+	-o bin/corridors.exe $^  \
 	$(static_link_flags) $(LIBS)
 
 .PHONY: clean
